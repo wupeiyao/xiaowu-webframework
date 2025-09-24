@@ -5,7 +5,7 @@
   配置maven依赖
   mvm install 到本地
 
-# Maven 依赖
+# 在目标项目导入Maven 依赖
      <dependency>
          <groupId>org.xiaowu</groupId>
         <artifactId>xiaowu-wpywebframework-core</artifactId>
