@@ -213,7 +213,7 @@ public interface GenericController<T, V, ID extends Serializable> {
 
     @GetMapping("/list")
     @Operation(summary = "查询数据列表（带数量限制）")
-    default Result<List<V>> list(@RequestParam(defaultValue = "1000") int limit) {
+    default Result<List<V>> list(@RequestParam(value = "limit", defaultValue = "1000") int limit) {
         if (limit > getMaxResultSize()) {
             return Result.error("查询结果数量不能超过 " + getMaxResultSize() + " 条，请使用分页查询");
         }
