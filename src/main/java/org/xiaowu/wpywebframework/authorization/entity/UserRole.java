@@ -21,10 +21,10 @@ public abstract class UserRole extends GenericEntity<String> implements Serializ
     }
 
     @TableField("user_id")
-    private Long userId;
+    private String userId;
 
     @TableField("role_id")
-    private Long roleId;
+    private String roleId;
 
     @TableField(value = "create_time", fill = FieldFill.INSERT)
     private Date createTime;
