@@ -70,7 +70,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().save(vo);
             return result > 0 ? Result.success("新增成功", result) : Result.error("新增失败");
         } catch (Exception e) {
-            return Result.error("新增失败，请稍后重试");
+            return Result.error("新增失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -87,7 +87,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().saveBatch(voList);
             return result > 0 ? Result.success("批量新增成功", result) : Result.error("批量新增失败");
         } catch (Exception e) {
-            return Result.error("批量新增失败，请稍后重试");
+            return Result.error("批量新增失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -98,7 +98,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().saveOrUpdate(vo);
             return result > 0 ? Result.success("保存成功", result) : Result.error("保存失败");
         } catch (Exception e) {
-            return Result.error("保存失败，请稍后重试");
+            return Result.error("保存失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -115,7 +115,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().saveOrUpdateBatch(voList);
             return result > 0 ? Result.success("批量保存成功", result) : Result.error("批量保存失败");
         } catch (Exception e) {
-            return Result.error("批量保存失败，请稍后重试");
+            return Result.error("批量保存失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -129,7 +129,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().removeById(id);
             return result > 0 ? Result.success("删除成功", result) : Result.error("删除失败，数据不存在");
         } catch (Exception e) {
-            return Result.error("删除失败，请稍后重试");
+            return Result.error("删除失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -146,7 +146,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().removeByIds(idList);
             return result > 0 ? Result.success("批量删除成功", result) : Result.error("批量删除失败");
         } catch (Exception e) {
-            return Result.error("批量删除失败，请稍后重试");
+            return Result.error("批量删除失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -157,7 +157,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().updateByVo(vo);
             return result > 0 ? Result.success("更新成功", result) : Result.error("更新失败，数据不存在");
         } catch (Exception e) {
-            return Result.error("更新失败，请稍后重试");
+            return Result.error("更新失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -174,7 +174,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             int result = this.getService().updateBatchByVo(voList);
             return result > 0 ? Result.success("批量更新成功", result) : Result.error("批量更新失败");
         } catch (Exception e) {
-            return Result.error("批量更新失败，请稍后重试");
+            return Result.error("批量更新失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -188,7 +188,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             V vo = this.getService().getById(id);
             return vo != null ? Result.success(vo) : Result.error("数据不存在");
         } catch (Exception e) {
-            return Result.error("查询失败，请稍后重试");
+            return Result.error("查询失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -207,7 +207,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             List<V> list = this.getService().listByIds(idList);
             return Result.success(list);
         } catch (Exception e) {
-            return Result.error("批量查询失败，请稍后重试");
+            return Result.error("批量查询失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -221,7 +221,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             List<V> list = this.getService().listWithLimit(limit);
             return Result.success(list);
         } catch (Exception e) {
-            return Result.error("查询失败，请稍后重试");
+            return Result.error("查询失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -239,7 +239,7 @@ public interface GenericController<T, V, ID extends Serializable> {
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
-            return Result.error("分页查询失败，请稍后重试");
+            return Result.error("分页查询失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -263,7 +263,7 @@ public interface GenericController<T, V, ID extends Serializable> {
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
-            return Result.error("条件分页查询失败，请稍后重试");
+            return Result.error("条件分页查询失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -274,7 +274,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             long count = this.getService().count();
             return Result.success(count);
         } catch (Exception e) {
-            return Result.error("统计失败，请稍后重试");
+            return Result.error("统计失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -288,7 +288,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             boolean exists = this.getService().existsById(id);
             return Result.success(exists);
         } catch (Exception e) {
-            return Result.error("判断失败，请稍后重试");
+            return Result.error("判断失败，请稍后重试"+e.getMessage());
         }
     }
 
@@ -304,7 +304,7 @@ public interface GenericController<T, V, ID extends Serializable> {
             List<V> list = this.getService().listWithLimit(queryWrapper, limit);
             return Result.success(list);
         } catch (Exception e) {
-            return Result.error("条件查询失败，请稍后重试");
+            return Result.error("条件查询失败，请稍后重试"+e.getMessage());
         }
     }
 
