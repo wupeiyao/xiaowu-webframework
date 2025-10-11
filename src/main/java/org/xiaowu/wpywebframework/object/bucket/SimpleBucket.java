@@ -12,15 +12,22 @@ import java.util.Date;
 public class SimpleBucket implements Bucket {
 
     private static final SimpleDateFormat FORMAT = new SimpleDateFormat("yyyyMMdd");
+
     /**
      * 桶名称
      */
-    private final String name;
+    private String name;
 
     /**
      * 文件夹
      */
-    private final String folder;
+    private String folder;
+
+    private String policy;
+
+    // 无参构造函数(Spring Boot配置绑定需要)
+    public SimpleBucket() {
+    }
 
     private SimpleBucket(String name, String folder) {
         this.name = name;
@@ -34,5 +41,4 @@ public class SimpleBucket implements Bucket {
     public static SimpleBucket of(String name, String folder) {
         return new SimpleBucket(name, folder);
     }
-
 }
