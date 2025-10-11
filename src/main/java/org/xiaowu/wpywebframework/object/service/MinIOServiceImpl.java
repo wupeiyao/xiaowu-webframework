@@ -108,28 +108,33 @@ public class MinIOServiceImpl implements MinIOService {
         return uploadFile(minIOProperties.getBucketName(), fileName, inputStream, contentType);
     }
 
-    @Override
     public String uploadFile(String bucketName, String fileName, InputStream inputStream, String contentType) {
         try {
-            // 确保存储桶存在
-            if (!bucketExists(bucketName)) {
-                createBucket(bucketName);
+            if (!this.bucketExists(bucketName)) {
+                this.createBucket(bucketName);
             }
-
-            minioClient.putObject(PutObjectArgs.builder()
-                    .bucket(bucketName)
-                    .object(fileName)
-                    .stream(inputStream, inputStream.available(), -1)
-                    .contentType(StringUtils.hasText(contentType) ? contentType : "application/octet-stream")
-                    .build());
-
+            this.minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(fileName)
+                            .stream(inputStream, inputStream.available(), -1)
+                            .contentType(StringUtils.hasText(contentType) ? contentType : "application/octet-stream")
+                            .build()
+            );
             log.info("文件上传成功: {} -> {}", fileName, bucketName);
-            return fileName;
+            // 拼接完整URL
+            String endpoint = minIOProperties.getEndpoint();
+            if (endpoint.endsWith("/")) {
+                endpoint = endpoint.substring(0, endpoint.length() - 1);
+            }
+            return String.format("%s/%s/%s", endpoint, bucketName, fileName);
+
         } catch (Exception e) {
             log.error("上传文件失败: {} -> {}", fileName, bucketName, e);
             throw new MinIOException("上传文件失败: " + fileName, e);
         }
     }
+
 
     @Override
     public String uploadFileByBusinessType(String businessType, String fileName, InputStream inputStream, String contentType) {

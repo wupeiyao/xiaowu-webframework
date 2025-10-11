@@ -1,1 +1,2 @@
 org.xiaowu.wpywebframework.object.configuration.MinIOAutoConfiguration
+org.xiaowu.wpywebframework.object.configuration.OSSAutoConfiguration
