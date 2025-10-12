@@ -2,6 +2,7 @@ package org.xiaowu.wpywebframework.core.utils;
 
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.ObjectUtils;
@@ -24,85 +25,90 @@ public class TreeNodeUtil {
     // 常量定义
     public static final String PARENT_NAME = "parent";
     public static final String CHILDREN_NAME = "children";
-    public static final List<Object> IDS = Collections.singletonList(0L);
+    public static final List<String> DEFAULT_ROOT_IDS = Collections.singletonList("0");
 
     /**
      * 构建树形结构
      */
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList) {
-        return buildTree(dataList, IDS, Function.identity(), (item) -> true);
+    public static <T extends ITreeNode<T>> List<T> buildTree(List<T> dataList) {
+        return buildTree(dataList, DEFAULT_ROOT_IDS, Function.identity(), (item) -> true);
     }
 
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList, Function<T, T> map) {
-        return buildTree(dataList, IDS, map, (item) -> true);
+    public static <T extends ITreeNode<T>> List<T> buildTree(List<T> dataList, Function<T, T> map) {
+        return buildTree(dataList, DEFAULT_ROOT_IDS, map, (item) -> true);
     }
 
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList, Function<T, T> map, Predicate<T> filter) {
-        return buildTree(dataList, IDS, map, filter);
+    public static <T extends ITreeNode<T>> List<T> buildTree(List<T> dataList, Function<T, T> map, Predicate<T> filter) {
+        return buildTree(dataList, DEFAULT_ROOT_IDS, map, filter);
     }
 
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList, List<Object> ids) {
-        return buildTree(dataList, ids, Function.identity(), (item) -> true);
+    public static <T extends ITreeNode<T>> List<T> buildTree(List<T> dataList, List<String> rootIds) {
+        return buildTree(dataList, rootIds, Function.identity(), (item) -> true);
     }
 
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList, List<Object> ids, Function<T, T> map) {
-        return buildTree(dataList, ids, map, (item) -> true);
+    public static <T extends ITreeNode<T>> List<T> buildTree(List<T> dataList, List<String> rootIds, Function<T, T> map) {
+        return buildTree(dataList, rootIds, map, (item) -> true);
     }
 
     /**
-     * 生成树形结构，支持过滤、映射以及子节点添加
+     * 生成树形结构,支持过滤、映射以及子节点添加
      *
      * @param dataList 数据集合
-     * @param ids 父元素的 ID 集合
+     * @param rootIds 根节点的父ID集合
      * @param map 数据映射函数
      * @param filter 数据过滤函数
-     * @param <T> 节点类型，必须实现 ITreeNode 接口
+     * @param <T> 节点类型,必须实现 ITreeNode 接口
      * @return 树形结构数据
      */
-    public static <T extends ITreeNode> List<T> buildTree(List<T> dataList, List<Object> ids, Function<T, T> map, Predicate<T> filter) {
-        if (CollectionUtils.isEmpty(ids)) {
+    public static <T extends ITreeNode<T>> List<T> buildTree(
+            List<T> dataList,
+            List<String> rootIds,
+            Function<T, T> map,
+            Predicate<T> filter) {
+
+        if (CollectionUtils.isEmpty(rootIds) || CollectionUtils.isEmpty(dataList)) {
             return Collections.emptyList();
         }
-
-        // 1. 将数据分为父子结构
         Map<String, List<T>> nodeMap = dataList.stream()
                 .filter(filter)
-                .collect(Collectors.groupingBy(item -> ids.contains(item.getParentId()) ? PARENT_NAME : CHILDREN_NAME));
+                .collect(Collectors.groupingBy(
+                        item -> rootIds.contains(item.getParentId()) ? PARENT_NAME : CHILDREN_NAME
+                ));
 
-        List<T> parent = nodeMap.getOrDefault(PARENT_NAME, Collections.emptyList());
+        List<T> parents = nodeMap.getOrDefault(PARENT_NAME, Collections.emptyList());
         List<T> children = nodeMap.getOrDefault(CHILDREN_NAME, Collections.emptyList());
 
-        // 1.1 如果未分出或过滤了父元素则返回子元素
-        if (parent.isEmpty()) {
-            return children;
+        if (parents.isEmpty()) {
+            return Collections.emptyList();
         }
+        List<String> nextRootIds = new ArrayList<>();
 
-        // 2. 使用有序集合存储下一轮父元素的 ids
-        List<Object> nextIds = new ArrayList<>(dataList.size());
-
-        // 3. 遍历父元素并修改父元素内容
-        List<T> collectParent = parent.stream().map(map).collect(Collectors.toList());
-        for (T parentItem : collectParent) {
-            if (nextIds.size() == children.size()) {
+        List<T> result = parents.stream().map(map).collect(Collectors.toList());
+        for (T parent : result) {
+            if (nextRootIds.size() == children.size()) {
                 break;
             }
 
             children.stream()
-                    .filter(childrenItem -> parentItem.getId().equals(childrenItem.getParentId()))
-                    .forEach(childrenItem -> {
-                        nextIds.add(childrenItem.getParentId());
+                    .filter(child -> parent.getId().equals(child.getParentId()))
+                    .forEach(child -> {
+                        if (!nextRootIds.contains(child.getParentId())) {
+                            nextRootIds.add(child.getParentId());
+                        }
                         try {
-                            parentItem.getChildren().add(childrenItem);
+                            parent.getChildren().add(child);
                         } catch (Exception e) {
-                            log.warn("TreeNodeUtil 发生错误, 传入参数中 children 不能为 null，解决方法: " +
-                                    "在 map 或 filter 中初始化 children");
+                            log.error("TreeNodeUtil 发生错误, children 不能为 null", e);
+                            throw new RuntimeException("构建树失败: children 未初始化");
                         }
                     });
         }
 
-        // 递归构建子树
-        buildTree(children, nextIds, map, filter);
-        return parent;
+        if (!nextRootIds.isEmpty()) {
+            buildTree(children, nextRootIds, map, filter);
+        }
+
+        return result;
     }
 
     /**
@@ -110,19 +116,30 @@ public class TreeNodeUtil {
      * @param currentId 当前节点的 id
      * @param getById 获取节点的函数
      * @param <T> 节点类型
-     * @return 生成的路径
+     * @return 生成的路径,格式: 1,2,3
      */
-    public static <T extends ITreeNode> String generateTreePath(Serializable currentId, Function<Serializable, T> getById) {
-        StringBuilder treePath = new StringBuilder();
-        if (SystemConstants.ROOT_NODE_ID.equals(currentId)) {
-            treePath.append(currentId);
-        } else {
-            T byId = getById.apply(currentId);
-            if (!ObjectUtils.isEmpty(byId)) {
-                treePath.append(byId.getTreePath()).append(",").append(byId.getId());
-            }
+    public static <T extends ITreeNode<T>> String generateTreePath(
+            String currentId,
+            Function<String, T> getById) {
+
+        if (StringUtils.isBlank(currentId)) {
+            return "";
         }
-        return treePath.toString();
+
+        if ("0".equals(currentId)) {
+            return currentId;
+        }
+
+        T node = getById.apply(currentId);
+        if (node == null) {
+            return currentId;
+        }
+
+        String parentPath = node.getTreePath();
+        if (StringUtils.isBlank(parentPath)) {
+            return node.getId();
+        }
+
+        return parentPath + "," + node.getId();
     }
 }
-
