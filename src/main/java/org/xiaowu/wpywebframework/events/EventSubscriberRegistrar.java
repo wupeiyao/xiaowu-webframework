@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ApplicationEvent;
@@ -17,7 +18,7 @@ import java.util.concurrent.*;
 
 @Slf4j
 public class EventSubscriberRegistrar implements ApplicationListener<ApplicationEvent>,
-        ApplicationContextAware, DisposableBean {
+        ApplicationContextAware, SmartInitializingSingleton,DisposableBean {
 
     private ApplicationContext applicationContext;
     private final Map<Class<?>, List<SubscriberInvoker>> subscribers = new ConcurrentHashMap<>();
@@ -38,9 +39,13 @@ public class EventSubscriberRegistrar implements ApplicationListener<Application
     }
 
     @Override
+    public void afterSingletonsInstantiated() {
+        this.registerSubscribers();
+    }
+
+    @Override
     public void setApplicationContext(@NotNull ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
-        registerSubscribers();
     }
 
     private void registerSubscribers() {
