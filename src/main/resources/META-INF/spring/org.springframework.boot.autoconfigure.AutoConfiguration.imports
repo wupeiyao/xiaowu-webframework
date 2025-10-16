@@ -2,3 +2,4 @@ org.xiaowu.wpywebframework.object.configuration.MinIOAutoConfiguration
 org.xiaowu.wpywebframework.object.configuration.OSSAutoConfiguration
 org.xiaowu.wpywebframework.task.config.TaskAutoConfiguration
 org.xiaowu.wpywebframework.events.config.EventAutoConfiguration
+org.xiaowu.wpywebframework.websocket.configuration.ServerEndpointAutoConfiguration
