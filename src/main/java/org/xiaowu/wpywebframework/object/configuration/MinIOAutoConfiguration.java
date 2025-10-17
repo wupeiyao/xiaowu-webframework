@@ -8,8 +8,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.xiaowu.wpywebframework.object.properties.MinIOProperties;
-import org.xiaowu.wpywebframework.object.service.MinIOService;
 import org.xiaowu.wpywebframework.object.service.MinIOServiceImpl;
+import org.xiaowu.wpywebframework.object.service.ObjectStorageService;
 
 import java.util.concurrent.TimeUnit;
 
@@ -43,7 +43,7 @@ public class MinIOAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MinIOService minIOService(MinioClient minioClient) {
+    public ObjectStorageService minIOService(MinioClient minioClient) {
         return new MinIOServiceImpl(minioClient, minIOProperties);
     }
 }

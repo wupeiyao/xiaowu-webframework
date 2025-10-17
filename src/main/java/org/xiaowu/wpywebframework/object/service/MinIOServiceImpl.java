@@ -1,253 +1,323 @@
 package org.xiaowu.wpywebframework.object.service;
 
+import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
 import io.minio.*;
-import io.minio.http.Method;
 import io.minio.messages.Item;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
-import org.xiaowu.wpywebframework.object.bucket.SimpleBucket;
-import org.xiaowu.wpywebframework.object.exception.MinIOException;
+import org.springframework.web.multipart.MultipartFile;
+import org.xiaowu.wpywebframework.object.bucket.Bucket;
+import org.xiaowu.wpywebframework.object.model.ObjectMetadataResponse;
+import org.xiaowu.wpywebframework.object.model.ObjectReadResponse;
 import org.xiaowu.wpywebframework.object.properties.MinIOProperties;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import org.xiaowu.wpywebframework.object.service.ObjectStorageService;
+
+import java.io.*;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-@Service
-public class MinIOServiceImpl implements MinIOService {
+public class MinIOServiceImpl implements ObjectStorageService {
 
     private final MinioClient minioClient;
     private final MinIOProperties minIOProperties;
+
+    private final Map<String, Map<Integer, byte[]>> uploadCache = new ConcurrentHashMap<>();
 
     public MinIOServiceImpl(MinioClient minioClient, MinIOProperties minIOProperties) {
         this.minioClient = minioClient;
         this.minIOProperties = minIOProperties;
     }
 
+    @Override
+    public String getType() {
+        return "minio";
+    }
 
     @Override
-    public void initBuckets() {
+    public ObjectWriteResponse putObject(MultipartFile filePart) {
+        return putObject(getDefaultBucket(), filePart);
+    }
+
+    @Override
+    public ObjectWriteResponse putObject(Bucket bucket, MultipartFile filePart) {
         try {
-            // 创建默认存储桶
-            if (StringUtils.hasText(minIOProperties.getDefaultBucket())) {
-                if (!bucketExists(minIOProperties.getDefaultBucket())) {
-                    createBucket(minIOProperties.getDefaultBucket());
-                    log.info("创建默认存储桶成功: {}", minIOProperties.getDefaultBucket());
-                }
-            }
+            String originalFilename = filePart.getOriginalFilename();
+            String objectId = IdUtil.fastSimpleUUID();
+            String suffix = getFileSuffix(originalFilename);
 
-            // 创建配置的存储桶列表
-            List<SimpleBucket> buckets = minIOProperties.getBuckets();
-            if (!CollectionUtils.isEmpty(buckets)) {
-                for (SimpleBucket bucket : buckets) {
-                    if (!bucketExists(bucket.getName())) {
-                        createBucket(bucket.getName());
-                        log.info("创建存储桶成功: {}", bucket.getName());
-                    }
-                }
-            }
-
-            // 创建业务映射中的存储桶
-            if (minIOProperties.getBucketMapping() != null) {
-                for (String bucketName : minIOProperties.getBucketMapping().values()) {
-                    if (StringUtils.hasText(bucketName) && !bucketExists(bucketName)) {
-                        createBucket(bucketName);
-                        log.info("创建映射存储桶成功: {}", bucketName);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("初始化存储桶失败", e);
+            return putObject(bucket, objectId + "." + suffix,
+                    null, null, filePart.getInputStream());
+        } catch (IOException e) {
+            log.error("上传文件失败", e);
+            throw new RuntimeException("上传文件失败", e);
         }
     }
 
     @Override
-    public void createBucket(String bucketName) {
+    public ObjectWriteResponse putObject(String name, InputStream stream) {
+        return putObject(getDefaultBucket(), name, null, null, stream);
+    }
+
+    @Override
+    public ObjectWriteResponse putObject(Bucket bucket, String name, InputStream stream) {
+        return putObject(bucket, name, null, null, stream);
+    }
+
+    @Override
+    public ObjectWriteResponse putObject(Bucket bucket, String name,
+                                         Map<String, String> headers,
+                                         Map<String, String> metadata,
+                                         byte[] bytes) {
+        return putObject(bucket, name, headers, metadata, new ByteArrayInputStream(bytes));
+    }
+
+    @Override
+    public ObjectWriteResponse putObject(Bucket bucket, String name,
+                                         Map<String, String> headers,
+                                         Map<String, String> metadata,
+                                         InputStream stream) {
         try {
-            minioClient.makeBucket(MakeBucketArgs.builder()
+            ensureBucketExists(bucket.getName());
+            String objectPath = buildObjectPath(bucket, name);
+            PutObjectArgs.Builder builder = PutObjectArgs.builder()
+                    .bucket(bucket.getName())
+                    .object(objectPath)
+                    .stream(stream, -1, 10485760); // 10MB part size
+            if (headers != null && !headers.isEmpty()) {
+                builder.headers(headers);
+            }
+            if (metadata != null && !metadata.isEmpty()) {
+                builder.userMetadata(metadata);
+            }
+            io.minio.ObjectWriteResponse response = minioClient.putObject(builder.build());
+
+            log.info("文件上传成功: bucket={}, object={}", bucket.getName(), objectPath);
+            return response;
+        } catch (Exception e) {
+            log.error("上传文件到MinIO失败", e);
+            throw new RuntimeException("上传文件失败", e);
+        }
+    }
+
+    @Override
+    public ObjectReadResponse getObject(String path) {
+        return getObject(path, null, null);
+    }
+
+    @Override
+    public ObjectReadResponse getObject(String path, Long offset, Long length) {
+        try {
+            String[] parts = parsePath(path);
+            String bucketName = parts[0];
+            String objectName = parts[1];
+
+            GetObjectArgs.Builder builder = GetObjectArgs.builder()
                     .bucket(bucketName)
-                    .build());
-            log.info("存储桶创建成功: {}", bucketName);
-        } catch (Exception e) {
-            log.error("创建存储桶失败: {}", bucketName, e);
-            throw new MinIOException("创建存储桶失败: " + bucketName, e);
-        }
-    }
-
-    @Override
-    public boolean bucketExists(String bucketName) {
-        try {
-            return minioClient.bucketExists(BucketExistsArgs.builder()
-                    .bucket(bucketName)
-                    .build());
-        } catch (Exception e) {
-            log.error("检查存储桶是否存在失败: {}", bucketName, e);
-            throw new MinIOException("检查存储桶是否存在失败: " + bucketName, e);
-        }
-    }
-
-    @Override
-    public void removeBucket(String bucketName) {
-        try {
-            minioClient.removeBucket(RemoveBucketArgs.builder()
-                    .bucket(bucketName)
-                    .build());
-            log.info("删除存储桶成功: {}", bucketName);
-        } catch (Exception e) {
-            log.error("删除存储桶失败: {}", bucketName, e);
-            throw new MinIOException("删除存储桶失败: " + bucketName, e);
-        }
-    }
-
-    @Override
-    public String uploadFile(String fileName, InputStream inputStream, String contentType) {
-        return uploadFile(minIOProperties.getBucketName(), fileName, inputStream, contentType);
-    }
-
-    public String uploadFile(String bucketName, String fileName, InputStream inputStream, String contentType) {
-        try {
-            if (!this.bucketExists(bucketName)) {
-                this.createBucket(bucketName);
+                    .object(objectName);
+            if (offset != null && length != null) {
+                builder.offset(offset).length(length);
             }
-            this.minioClient.putObject(
-                    PutObjectArgs.builder()
+
+            try (InputStream stream = minioClient.getObject(builder.build())) {
+                ObjectReadResponse response = new ObjectReadResponse();
+                response.setBytes(stream.readAllBytes());
+                response.setStorage(getType());
+                response.setName(getFileName(objectName));
+                response.setSuffix(getFileSuffix(objectName));
+                response.setObjectId(getObjectId(objectName));
+                return response;
+            }
+
+        } catch (Exception e) {
+            log.error("获取文件失败: path={}", path, e);
+            throw new RuntimeException("获取文件失败", e);
+        }
+    }
+
+    @Override
+    public ObjectMetadataResponse getObjectMetadata(String path) {
+        try {
+            String[] parts = parsePath(path);
+            String bucketName = parts[0];
+            String objectName = parts[1];
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder()
                             .bucket(bucketName)
-                            .object(fileName)
-                            .stream(inputStream, inputStream.available(), -1)
-                            .contentType(StringUtils.hasText(contentType) ? contentType : "application/octet-stream")
+                            .object(objectName)
                             .build()
             );
-            log.info("文件上传成功: {} -> {}", fileName, bucketName);
-            // 拼接完整URL
-            String endpoint = minIOProperties.getEndpoint();
-            if (endpoint.endsWith("/")) {
-                endpoint = endpoint.substring(0, endpoint.length() - 1);
+
+            ObjectMetadataResponse response = new ObjectMetadataResponse();
+            response.setStorage(getType());
+            response.setBucket(bucketName);
+            response.setPath(path);
+            response.setName(getFileName(objectName));
+            response.setSuffix(getFileSuffix(objectName));
+            response.setObjectId(getObjectId(objectName));
+            response.setSize((int) stat.size());
+            response.setHeaders(convertMapToString(stat.headers().toMultimap()));
+            response.setMetadata(convertMapToString(stat.userMetadata()));
+            response.setCreateTime(LocalDateTime.now());
+            return response;
+
+        } catch (Exception e) {
+            log.error("获取文件元数据失败: path={}", path, e);
+            throw new RuntimeException("获取文件元数据失败", e);
+        }
+    }
+
+    @Override
+    public void delete(String path) {
+        try {
+            String[] parts = parsePath(path);
+            String bucketName = parts[0];
+            String objectName = parts[1];
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectName)
+                            .build()
+            );
+            log.info("删除文件成功: path={}", path);
+        } catch (Exception e) {
+            log.error("删除文件失败: path={}", path, e);
+            throw new RuntimeException("删除文件失败", e);
+        }
+    }
+
+    @Override
+    public String uploadFilePart(String fileId, String fileName,
+                                 MultipartFile filePart,
+                                 Integer chunkIndex,
+                                 Integer totalChunks,
+                                 String bucketName) throws IOException {
+        try {
+            String uploadKey = fileId + "_" + fileName;
+            uploadCache.putIfAbsent(uploadKey, new ConcurrentHashMap<>());
+            Map<Integer, byte[]> chunks = uploadCache.get(uploadKey);
+            chunks.put(chunkIndex, filePart.getBytes());
+
+            log.info("接收文件分片: fileId={}, chunkIndex={}/{}", fileId, chunkIndex + 1, totalChunks);
+            if (chunks.size() == totalChunks) {
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                for (int i = 0; i < totalChunks; i++) {
+                    byte[] chunk = chunks.get(i);
+                    if (chunk == null) {
+                        throw new RuntimeException("分片缺失: index=" + i);
+                    }
+                    outputStream.write(chunk);
+                }
+                String suffix = getFileSuffix(fileName);
+                String objectName = fileId + "." + suffix;
+                Bucket bucket = createBucket(bucketName);
+                putObject(bucket, objectName, null, null, outputStream.toByteArray());
+                uploadCache.remove(uploadKey);
+                log.info("文件分片上传完成: fileId={}, fileName={}", fileId, fileName);
+
+                return buildObjectPath(bucket, objectName);
             }
-            return String.format("%s/%s/%s", endpoint, bucketName, fileName);
-
+            return null;
         } catch (Exception e) {
-            log.error("上传文件失败: {} -> {}", fileName, bucketName, e);
-            throw new MinIOException("上传文件失败: " + fileName, e);
+            log.error("上传文件分片失败", e);
+            throw new IOException("上传文件分片失败", e);
         }
     }
 
-
-    @Override
-    public String uploadFileByBusinessType(String businessType, String fileName, InputStream inputStream, String contentType) {
-        String bucketName = minIOProperties.getBucketName(businessType);
-        return uploadFile(bucketName, fileName, inputStream, contentType);
-    }
-
-    @Override
-    public InputStream downloadFile(String fileName) {
-        return downloadFile(minIOProperties.getBucketName(), fileName);
-    }
-
-    @Override
-    public InputStream downloadFile(String bucketName, String fileName) {
-        try {
-            return minioClient.getObject(GetObjectArgs.builder()
-                    .bucket(bucketName)
-                    .object(fileName)
-                    .build());
-        } catch (Exception e) {
-            log.error("下载文件失败: {} <- {}", fileName, bucketName, e);
-            throw new MinIOException("下载文件失败: " + fileName, e);
+    /**
+     * 确保桶存在
+     */
+    private void ensureBucketExists(String bucketName) throws Exception {
+        boolean exists = minioClient.bucketExists(
+                BucketExistsArgs.builder().bucket(bucketName).build()
+        );
+        if (!exists) {
+            minioClient.makeBucket(
+                    MakeBucketArgs.builder().bucket(bucketName).build()
+            );
+            log.info("创建桶: {}", bucketName);
         }
     }
 
-    @Override
-    public InputStream downloadFileByBusinessType(String businessType, String fileName) {
-        String bucketName = minIOProperties.getBucketName(businessType);
-        return downloadFile(bucketName, fileName);
-    }
-
-    @Override
-    public void deleteFile(String fileName) {
-        deleteFile(minIOProperties.getBucketName(), fileName);
-    }
-
-    @Override
-    public void deleteFile(String bucketName, String fileName) {
-        try {
-            minioClient.removeObject(RemoveObjectArgs.builder()
-                    .bucket(bucketName)
-                    .object(fileName)
-                    .build());
-            log.info("删除文件成功: {} <- {}", fileName, bucketName);
-        } catch (Exception e) {
-            log.error("删除文件失败: {} <- {}", fileName, bucketName, e);
-            throw new MinIOException("删除文件失败: " + fileName, e);
+    /**
+     * 构建对象路径
+     */
+    private String buildObjectPath(Bucket bucket, String name) {
+        if (StrUtil.isNotBlank(bucket.getFolder())) {
+            return bucket.getFolder() + "/" + name;
         }
+        return name;
     }
 
-    @Override
-    public void deleteFileByBusinessType(String businessType, String fileName) {
-        String bucketName = minIOProperties.getBucketName(businessType);
-        deleteFile(bucketName, fileName);
-    }
-
-    @Override
-    public String getPresignedUrl(String fileName, int expiry) {
-        return getPresignedUrl(minIOProperties.getBucketName(), fileName, expiry);
-    }
-
-    @Override
-    public String getPresignedUrl(String bucketName, String fileName, int expiry) {
-        try {
-            return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
-                    .method(Method.GET)
-                    .bucket(bucketName)
-                    .object(fileName)
-                    .expiry(expiry, TimeUnit.SECONDS)
-                    .build());
-        } catch (Exception e) {
-            log.error("获取预签名URL失败: {} <- {}", fileName, bucketName, e);
-            throw new MinIOException("获取预签名URL失败: " + fileName, e);
+    /**
+     * 解析路径
+     */
+    private String[] parsePath(String path) {
+        String[] parts = path.split("/", 2);
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("无效的路径格式: " + path);
         }
+        return parts;
     }
 
-    @Override
-    public String getPresignedUrlByBusinessType(String businessType, String fileName, int expiry) {
-        String bucketName = minIOProperties.getBucketName(businessType);
-        return getPresignedUrl(bucketName, fileName, expiry);
+    /**
+     * 获取文件后缀
+     */
+    private String getFileSuffix(String filename) {
+        if (StrUtil.isBlank(filename)) {
+            return "";
+        }
+        int lastDot = filename.lastIndexOf(".");
+        return lastDot > 0 ? filename.substring(lastDot + 1) : "";
     }
 
-    @Override
-    public List<String> listFiles(String bucketName) {
-        try {
-            List<String> files = new ArrayList<>();
-            Iterable<Result<Item>> results = minioClient.listObjects(ListObjectsArgs.builder()
-                    .bucket(bucketName)
-                    .build());
+    /**
+     * 获取文件名（不含后缀）
+     */
+    private String getFileName(String objectName) {
+        String name = objectName;
+        if (objectName.contains("/")) {
+            name = objectName.substring(objectName.lastIndexOf("/") + 1);
+        }
+        int lastDot = name.lastIndexOf(".");
+        return lastDot > 0 ? name.substring(0, lastDot) : name;
+    }
 
-            for (Result<Item> result : results) {
-                files.add(result.get().objectName());
+    /**
+     * 获取对象ID
+     */
+    private String getObjectId(String objectName) {
+        return getFileName(objectName);
+    }
+
+    /**
+     * 转换Map为String
+     */
+    private String convertMapToString(Map<String, ?> map) {
+        if (map == null || map.isEmpty()) {
+            return null;
+        }
+        return map.toString();
+    }
+
+    /**
+     * 获取默认桶
+     */
+    private Bucket getDefaultBucket() {
+        return createBucket(minIOProperties.getDefaultBucket());
+    }
+
+    /**
+     * 创建桶对象
+     */
+    private Bucket createBucket(String bucketName) {
+        return new Bucket() {
+            @Override
+            public String getName() {
+                return bucketName;
             }
-            return files;
-        } catch (Exception e) {
-            log.error("列出文件失败: {}", bucketName, e);
-            throw new MinIOException("列出文件失败: " + bucketName, e);
-        }
-    }
-
-    @Override
-    public List<String> listFiles() {
-        return listFiles(minIOProperties.getBucketName());
-    }
-
-    @Override
-    public List<String> listFilesByBusinessType(String businessType) {
-        String bucketName = minIOProperties.getBucketName(businessType);
-        return listFiles(bucketName);
-    }
-
-    @Override
-    public String getBucketNameByBusinessType(String businessType) {
-        return minIOProperties.getBucketName(businessType);
+        };
     }
 }
