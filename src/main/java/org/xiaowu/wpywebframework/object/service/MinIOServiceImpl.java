@@ -46,15 +46,20 @@ public class MinIOServiceImpl implements ObjectStorageService {
         try {
             String originalFilename = filePart.getOriginalFilename();
             String objectId = IdUtil.fastSimpleUUID();
-            String suffix = getFileSuffix(originalFilename);
-
-            return putObject(bucket, objectId + "." + suffix,
-                    null, null, filePart.getInputStream());
+            String suffix = this.getFileSuffix(originalFilename);
+            String contentType = filePart.getContentType();
+            if (contentType == null || contentType.isEmpty()) {
+                contentType = "application/octet-stream";
+            }
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Content-Type", contentType);
+            return this.putObject(bucket, objectId + "." + suffix, headers, null, filePart.getInputStream());
         } catch (IOException e) {
             log.error("上传文件失败", e);
             throw new RuntimeException("上传文件失败", e);
         }
     }
+
 
     @Override
     public ObjectWriteResponse putObject(String name, InputStream stream) {
